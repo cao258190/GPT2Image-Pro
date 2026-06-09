@@ -1,4 +1,4 @@
-import { buildSignedStorageImageUrl } from "@repo/shared/storage/signed-url";
+import { buildStoredImageReadUrl } from "@/features/image-generation/storage-url";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -10,8 +10,8 @@ function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-export function buildStorageUrl(bucket: string | null, key: string | null) {
-  return buildSignedStorageImageUrl(key, bucket) || undefined;
+export async function buildStorageUrl(bucket: string | null, key: string | null) {
+  return (await buildStoredImageReadUrl(key, bucket)) || undefined;
 }
 
 export function getPromptRepairNotice(metadata: unknown) {
@@ -23,40 +23,43 @@ export function getPromptRepairNotice(metadata: unknown) {
   );
 }
 
-export function getImageOutputs(metadata: unknown, bucket: string | null) {
+export async function getImageOutputs(metadata: unknown, bucket: string | null) {
   const outputImage = asRecord(asRecord(metadata).outputImage);
   const outputs = outputImage.imageOutputs;
   const promptRepairNotice = getPromptRepairNotice(metadata);
   if (!Array.isArray(outputs)) return [];
-  return outputs.flatMap((item, index) => {
-    const output = asRecord(item);
-    const storageKey = stringValue(output.storageKey);
-    const imageUrl =
-      (storageKey ? buildStorageUrl(bucket, storageKey) : undefined) ||
-      stringValue(output.imageUrl);
-    const generationId = stringValue(output.generationId);
-    if (!imageUrl && !generationId) return [];
-    return [
-      {
-        generationId,
-        imageUrl,
-        imageFileId: stringValue(output.imageFileId),
-        webImageMessageId: stringValue(output.webImageMessageId),
-        webImageGroupId: stringValue(output.webImageGroupId),
-        size: stringValue(output.size),
-        revisedPrompt: stringValue(output.revisedPrompt),
-        upstreamRevisedPrompt: stringValue(output.upstreamRevisedPrompt),
-        promptRepairNotice,
-        index,
-        outputRole:
-          output.role === "agent_draft" ||
-          output.role === "choice" ||
-          output.role === "final"
-            ? output.role
-            : undefined,
-      },
-    ];
-  });
+  const items = await Promise.all(
+    outputs.map(async (item, index) => {
+      const output = asRecord(item);
+      const storageKey = stringValue(output.storageKey);
+      const imageUrl =
+        (storageKey ? await buildStorageUrl(bucket, storageKey) : undefined) ||
+        stringValue(output.imageUrl);
+      const generationId = stringValue(output.generationId);
+      if (!imageUrl && !generationId) return [];
+      return [
+        {
+          generationId,
+          imageUrl,
+          imageFileId: stringValue(output.imageFileId),
+          webImageMessageId: stringValue(output.webImageMessageId),
+          webImageGroupId: stringValue(output.webImageGroupId),
+          size: stringValue(output.size),
+          revisedPrompt: stringValue(output.revisedPrompt),
+          upstreamRevisedPrompt: stringValue(output.upstreamRevisedPrompt),
+          promptRepairNotice,
+          index,
+          outputRole:
+            output.role === "agent_draft" ||
+            output.role === "choice" ||
+            output.role === "final"
+              ? output.role
+              : undefined,
+        },
+      ];
+    })
+  );
+  return items.flat();
 }
 
 export function getResponseOutput(metadata: unknown) {

@@ -1,4 +1,15 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/features/image-generation/storage-url", () => ({
+  buildStoredImageReadUrl: vi.fn(
+    async (key: string | null, bucket: string | null) =>
+      key
+        ? `https://rustfs.example.test/${bucket || "generations"}/${key}?X-Amz-Signature=${"a".repeat(
+            64
+          )}`
+        : null
+  ),
+}));
 
 import { getImageOutputs } from "../status-output";
 
@@ -19,8 +30,8 @@ describe("image status output URLs", () => {
     }
   });
 
-  it("re-signs stored output images instead of returning stale metadata URLs", () => {
-    const outputs = getImageOutputs(
+  it("re-signs stored output images instead of returning stale metadata URLs", async () => {
+    const outputs = await getImageOutputs(
       {
         outputImage: {
           imageOutputs: [
@@ -38,10 +49,8 @@ describe("image status output URLs", () => {
 
     expect(outputs).toHaveLength(1);
     const url = new URL(outputs[0]!.imageUrl!, "https://example.com");
-    expect(url.pathname).toBe("/api/storage/generations/user/out.png");
-    expect(url.searchParams.get("sig")).toMatch(/^[a-f0-9]{64}$/);
-    expect(Number(url.searchParams.get("exp"))).toBeGreaterThan(
-      Math.floor(Date.now() / 1000)
-    );
+    expect(url.origin).toBe("https://rustfs.example.test");
+    expect(url.pathname).toBe("/generations/user/out.png");
+    expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[a-f0-9]{64}$/);
   });
 });

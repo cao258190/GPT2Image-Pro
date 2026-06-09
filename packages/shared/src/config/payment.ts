@@ -12,6 +12,7 @@ import {
   type PriceConfig,
   type PricingConfig,
 } from "../payment/types";
+import { getPublicAppUrlFromEnv } from "../runtime-app-url";
 
 const paymentProvider =
   process.env.PAYMENT_PROVIDER?.trim().toLowerCase() === "epay" ||
@@ -341,11 +342,5 @@ export function getPlanPrice(
  * 获取应用的基础 URL
  */
 export function getBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return process.env.NEXT_PUBLIC_APP_URL;
-  }
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-  return "http://localhost:3000";
+  return getPublicAppUrlFromEnv();
 }

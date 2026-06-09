@@ -1,3 +1,4 @@
+import { getRuntimePublicAppUrl } from "../runtime-app-url-server";
 import { getRuntimeSettingString } from "../system-settings";
 import { sendEmail } from "../mail/utils";
 import { SupportTicketNotificationEmail } from "../mail/templates";
@@ -38,11 +39,8 @@ function optionLabel(
 }
 
 async function getTicketUrl(ticketId: string) {
-  const baseUrl =
-    (await getRuntimeSettingString("NEXT_PUBLIC_APP_URL")) ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    "http://localhost:3000";
-  return `${baseUrl.replace(/\/$/, "")}/dashboard/support/${ticketId}`;
+  const baseUrl = await getRuntimePublicAppUrl();
+  return `${baseUrl}/dashboard/support/${ticketId}`;
 }
 
 export async function sendTicketAdminNotification(

@@ -8,10 +8,19 @@ import {
   VerifyEmailEmail,
 } from "../mail/templates/primary-action-email";
 import { sendEmail } from "../mail/utils";
+import { getPublicAppUrlFromEnv } from "../runtime-app-url";
 import { registrationVerificationPlugin } from "./registration-verification-plugin";
 
 function settingValue(name: string, fallback = "") {
   return process.env[name] || fallback;
+}
+
+function publicAppUrl(fallback = "http://localhost:3000") {
+  return getPublicAppUrlFromEnv(fallback);
+}
+
+function betterAuthUrl() {
+  return settingValue("BETTER_AUTH_URL", publicAppUrl());
 }
 
 function configuredSocialProviders() {
@@ -59,7 +68,7 @@ export const auth = betterAuth({
    * 基础 URL 配置
    * 用于 OAuth 回调和邮件链接
    */
-  baseURL: settingValue("BETTER_AUTH_URL", "http://localhost:3000"),
+  baseURL: betterAuthUrl(),
 
   /**
    * 信任的来源(CSRF / 登录来源校验)
@@ -72,7 +81,8 @@ export const auth = betterAuth({
   trustedOrigins: Array.from(
     new Set(
       [
-        settingValue("BETTER_AUTH_URL", "http://localhost:3000"),
+        betterAuthUrl(),
+        publicAppUrl(""),
         ...settingValue("BETTER_AUTH_TRUSTED_ORIGINS")
           .split(",")
           .map((origin) => origin.trim()),

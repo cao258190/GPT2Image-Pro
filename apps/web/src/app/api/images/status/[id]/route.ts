@@ -34,8 +34,8 @@ export const GET = withApiLogging(
 
     if (!row) return jsonError("Generation not found", 404);
 
-    const imageUrl = buildStorageUrl(row.storageBucket, row.storageKey);
-    const imageOutputs = getImageOutputs(row.metadata, row.storageBucket);
+    const imageUrl = await buildStorageUrl(row.storageBucket, row.storageKey);
+    const imageOutputs = await getImageOutputs(row.metadata, row.storageBucket);
     const responseOutput = getResponseOutput(row.metadata);
 
     return NextResponse.json({

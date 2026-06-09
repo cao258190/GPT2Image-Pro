@@ -14,7 +14,6 @@ import {
   moderateContent,
 } from "@repo/shared/moderation";
 import { getStorageProvider } from "@repo/shared/storage/providers";
-import { buildSignedStorageImageUrl } from "@repo/shared/storage/signed-url";
 import {
   getPlanCapabilitySnapshot,
   getPlanQueueSettings,
@@ -76,6 +75,7 @@ import {
   repairModerationBlockedPromptWithResponses,
 } from "./service";
 import { isContentSafetyRejection } from "./sla-classification";
+import { buildStoredImageReadUrl } from "./storage-url";
 import {
   applyTransparentMatte,
   isTransparentUnsupportedError,
@@ -310,7 +310,7 @@ export type ImageGenerationOperationResult = {
 };
 
 async function getStoredImageUrl(bucket: string, storageKey: string) {
-  return buildSignedStorageImageUrl(storageKey, bucket) ?? "";
+  return (await buildStoredImageReadUrl(storageKey, bucket)) ?? "";
 }
 
 async function toImageBuffer(result: {
@@ -1988,6 +1988,8 @@ async function runQueuedImageGenerationForUser({
           config,
           {
             prompt: currentPrompt,
+            userId: input.userId,
+            generationId,
             apiPrompt: currentApiPrompt,
             promptOptimization,
             signal: commonSignal,
@@ -2014,6 +2016,8 @@ async function runQueuedImageGenerationForUser({
             config,
             {
               prompt: currentPrompt,
+              userId: input.userId,
+              generationId,
               apiPrompt: currentApiPrompt,
               fileContext: input.fileContext,
               files: input.files,

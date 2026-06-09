@@ -14,6 +14,7 @@ import {
   generateSignedImageParams,
   generateSignedImageUrl,
   isPublicBucket,
+  parseStorageImageUrl,
   verifySignedImageUrl,
 } from "./signed-url";
 
@@ -184,6 +185,20 @@ describe("signed-url", () => {
         "https://app.example.test"
       );
       expect(url).toBeUndefined();
+    });
+  });
+
+  describe("parseStorageImageUrl", () => {
+    it("strips thumbnail width path segments from storage keys", () => {
+      expect(
+        parseStorageImageUrl(
+          "https://app.example.test/api/storage/generations/w128/user-1/out.png?sig=x&exp=1",
+          "https://app.example.test"
+        )
+      ).toEqual({
+        bucket: "generations",
+        key: "user-1/out.png",
+      });
     });
   });
 

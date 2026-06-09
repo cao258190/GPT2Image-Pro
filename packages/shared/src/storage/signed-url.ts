@@ -206,8 +206,14 @@ export function parseStorageImageUrl(
     const segments = parsed.pathname.split("/").filter(Boolean);
     const storageIndex = segments.indexOf("storage");
     const bucket = segments[storageIndex + 1];
-    const keySegments = segments.slice(storageIndex + 2);
+    let keySegments = segments.slice(storageIndex + 2);
     if (storageIndex < 0 || !bucket || keySegments.length === 0) return null;
+    if (
+      keySegments.length > 1 &&
+      /^w\d+$/.test(keySegments[0] || "")
+    ) {
+      keySegments = keySegments.slice(1);
+    }
 
     const key = keySegments
       .map((segment) => decodeURIComponent(segment))

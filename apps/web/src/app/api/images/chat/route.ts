@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { withApiLogging } from "@repo/shared/api-logger";
 import { auth } from "@repo/shared/auth";
+import { getPublicAppUrlFromEnv } from "@repo/shared/runtime-app-url";
 import { buildPublicImageUrl } from "@repo/shared/storage/signed-url";
 import {
   canUsePlanCapability,
@@ -211,11 +212,7 @@ function wantsStreamResponse(request: NextRequest, formData: FormData) {
 }
 
 function getRequestBaseUrl(request: NextRequest) {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.BETTER_AUTH_URL ||
-    new URL(request.url).origin
-  );
+  return getPublicAppUrlFromEnv(new URL(request.url).origin);
 }
 
 function toPublicImageUrl(request: NextRequest, imageUrl?: string) {

@@ -1,4 +1,5 @@
 import { logWarn } from "@repo/shared/logger";
+import { getPublicAppUrlFromEnv } from "@repo/shared/runtime-app-url";
 import {
   buildPublicImageUrl,
   parseStorageImageUrl,
@@ -56,11 +57,7 @@ export const IMAGE_JSON_KEEP_ALIVE_INITIAL_WAIT_MS =
   DEFAULT_JSON_KEEP_ALIVE_INITIAL_WAIT_MS;
 
 function getRequestBaseUrl(request: Request) {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.BETTER_AUTH_URL ||
-    new URL(request.url).origin
-  );
+  return getPublicAppUrlFromEnv(new URL(request.url).origin);
 }
 
 export function getPublicImageUrl(request: Request, imageUrl?: string) {

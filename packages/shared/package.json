@@ -29,6 +29,8 @@
     "./credits/components": "./src/credits/components/index.ts",
     "./generation-maintenance": "./src/generation-maintenance.ts",
     "./generation-settlement": "./src/generation-settlement.ts",
+    "./runtime-app-url": "./src/runtime-app-url.ts",
+    "./runtime-app-url-server": "./src/runtime-app-url-server.ts",
     "./image-backend/nested-groups": "./src/image-backend/nested-groups.ts",
     "./storage": "./src/storage/index.ts",
     "./storage/signed-url": "./src/storage/signed-url.ts",

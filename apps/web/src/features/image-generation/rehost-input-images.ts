@@ -33,6 +33,38 @@ import {
 } from "./request-utils";
 import type { ImageInputFile } from "./types";
 
+const OPENAI_INPUT_IMAGE_URL_EXPIRES_SECONDS = 60 * 60;
+
+function toAbsoluteStorageUrl(url: string | null | undefined, baseUrl?: string) {
+  if (!url) return null;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (!baseUrl) return url;
+  try {
+    return new URL(url, baseUrl).toString();
+  } catch {
+    return url;
+  }
+}
+
+function buildInAppFallbackUrl(
+  key: string,
+  bucket: string,
+  publicBaseUrl?: string
+) {
+  try {
+    return toAbsoluteStorageUrl(
+      buildSignedStorageImageUrl(
+        key,
+        bucket,
+        OPENAI_INPUT_IMAGE_URL_EXPIRES_SECONDS
+      ),
+      publicBaseUrl
+    );
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 根据 MIME 类型推断对象存储文件扩展名（与 request-utils 保持一致）。
  */
@@ -88,7 +120,8 @@ export type RehostContext = {
  * - 已有 storageKey → 直接返回（已是我方对象，无需处理）；
  * - image.url 为第一方站内 URL → 直接返回（已可控）；
  * - 否则需转存：优先用 image.data 字节，无字节则下载 image.url；拿到字节后
- *   putObject 到 generations 桶并回填 storageKey/storageBucket/url（站内签名）。
+ *   putObject 到 generations 桶并回填 storageKey/storageBucket/url（对象存储直连
+ *   签名 URL 优先，站内签名 URL 兜底）。
  *
  * @param image 待处理输入图（不修改入参，返回新对象或原对象）。
  * @param ctx re-host 上下文（userId/generationId/scope/index/signal）。
@@ -100,14 +133,55 @@ export async function ensureInputImageRehosted(
   ctx: RehostContext
 ): Promise<ImageInputFile> {
   // 已是我方存储对象。
-  if (image.storageKey?.trim()) return image;
+  if (image.storageKey?.trim()) {
+    const key = image.storageKey.trim();
+    const bucket =
+      image.storageBucket?.trim() ||
+      (await getRuntimeSettingString("NEXT_PUBLIC_GENERATIONS_BUCKET_NAME")) ||
+      "generations";
+    const publicBaseUrl = await getImagePublicBaseUrl();
+    try {
+      const storage = await getStorageProvider();
+      const url = await storage.getSignedUrl(
+        key,
+        bucket,
+        OPENAI_INPUT_IMAGE_URL_EXPIRES_SECONDS
+      );
+      return {
+        ...image,
+        storageBucket: bucket,
+        storageKey: key,
+        url: toAbsoluteStorageUrl(url, publicBaseUrl) || url,
+      };
+    } catch (error) {
+      logWarn("输入图存储 URL 刷新失败，回退到站内签名 URL", {
+        userId: ctx.userId,
+        generationId: ctx.generationId,
+        index: ctx.index ?? 0,
+        storageKey: key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const fallbackUrl = buildInAppFallbackUrl(key, bucket, publicBaseUrl);
+      return fallbackUrl
+        ? { ...image, storageBucket: bucket, storageKey: key, url: fallbackUrl }
+        : image;
+    }
+  }
 
   const publicBaseUrl = await getImagePublicBaseUrl();
   const trimmedUrl = image.url?.trim();
 
-  // 已是第一方站内 URL，可控，无需转存。
-  if (trimmedUrl && parseStorageImageUrl(trimmedUrl, publicBaseUrl)) {
-    return image;
+  // 已是第一方站内 URL 时，解析出对象位置并刷新为对象存储直连 URL。
+  const firstPartyStorageRef = parseStorageImageUrl(trimmedUrl, publicBaseUrl);
+  if (firstPartyStorageRef) {
+    return await ensureInputImageRehosted(
+      {
+        ...image,
+        storageBucket: firstPartyStorageRef.bucket,
+        storageKey: firstPartyStorageRef.key,
+      },
+      ctx
+    );
   }
 
   const index = ctx.index ?? 0;
@@ -135,6 +209,20 @@ export async function ensureInputImageRehosted(
     const key = `${ctx.userId}/${scope}/${ctx.generationId}-${index}.${extension}`;
 
     await storage.putObject(key, bucket, bytes, contentType);
+    const url = await storage
+      .getSignedUrl(key, bucket, OPENAI_INPUT_IMAGE_URL_EXPIRES_SECONDS)
+      .then(
+        (signedUrl) => toAbsoluteStorageUrl(signedUrl, publicBaseUrl) || signedUrl
+      )
+      .catch((error) => {
+        logWarn("输入图 re-host 直连签名 URL 生成失败，回退到站内签名 URL", {
+          userId: ctx.userId,
+          generationId: ctx.generationId,
+          index,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return buildInAppFallbackUrl(key, bucket, publicBaseUrl) || image.url;
+      });
 
     return {
       ...image,
@@ -142,7 +230,7 @@ export async function ensureInputImageRehosted(
       type: contentType,
       storageBucket: bucket,
       storageKey: key,
-      url: buildSignedStorageImageUrl(key, bucket) || image.url,
+      url,
     };
   } catch (error) {
     logWarn("输入图 re-host 失败，回退到字节/原 URL", {

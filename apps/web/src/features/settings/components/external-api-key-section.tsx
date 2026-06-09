@@ -116,9 +116,7 @@ function groupOptionLabel(group: ImageBackendGroupOption) {
 export function ExternalApiKeySection({ timeZone }: { timeZone?: string }) {
   const locale = useLocale();
   const t = useTranslations("Settings.externalApi");
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-    "https://your-domain.example";
+  const [baseUrl, setBaseUrl] = useState("https://your-domain.example");
   const didLoadRef = useRef(false);
   const [keys, setKeys] = useState<ExternalApiKeySummary[]>([]);
   const [newKey, setNewKey] = useState("");
@@ -285,6 +283,7 @@ export function ExternalApiKeySection({ timeZone }: { timeZone?: string }) {
   );
 
   useEffect(() => {
+    setBaseUrl(window.location.origin.replace(/\/$/, ""));
     if (didLoadRef.current) return;
     didLoadRef.current = true;
     loadKeys();

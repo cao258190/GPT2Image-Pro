@@ -1,4 +1,5 @@
 import { getStorageProvider } from "@repo/shared/storage/providers";
+import { getRuntimePublicAppUrl } from "@repo/shared/runtime-app-url-server";
 import { getRuntimeSettingString } from "@repo/shared/system-settings";
 import { logWarn } from "@repo/shared/logger";
 import type { ImageInputFile } from "./types";
@@ -20,9 +21,7 @@ export type TemporaryUploadedImage = {
 export async function getImagePublicBaseUrl() {
   return (
     (await getRuntimeSettingString("CONTENT_MODERATION_PUBLIC_BASE_URL")) ||
-    (await getRuntimeSettingString("NEXT_PUBLIC_APP_URL")) ||
-    (await getRuntimeSettingString("BETTER_AUTH_URL")) ||
-    ""
+    (await getRuntimePublicAppUrl(""))
   ).replace(/\/$/, "");
 }
 

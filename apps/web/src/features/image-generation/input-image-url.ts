@@ -3,10 +3,11 @@
  *
  * 给上游 api 后端（chat/completions、responses）构造 image_url 时，把一张输入图
  * 解析为可发送的 URL 或 data: base64。优先级：
- * 1. storageKey/storageBucket → 站内代理签名 URL（/api/storage/...，我方可控）；
- * 2. image.url 但仅当其为第一方站内 URL 时透传（避免把第三方易限流外链交给上游，
+ * 1. image.url 若它是发送前刷新得到的对象存储直连 URL，则优先透传；
+ * 2. storageKey/storageBucket → 站内代理签名 URL（/api/storage/...，兜底可控）；
+ * 3. image.url 但仅当其为第一方站内 URL 时透传（避免把第三方易限流外链交给上游，
  *    上游下载外链会被图床限流返回 "failed download file 429"）；
- * 3. 否则：有字节用 base64 内联；无字节（如历史图空 Buffer）退而透传原外链
+ * 4. 否则：有字节用 base64 内联；无字节（如历史图空 Buffer）退而透传原外链
  *    (best-effort，无字节无法做得更好)。
  *
  * 使用方：service.ts buildChatCompletionContent、responses-image.ts getInputImageContent。
@@ -18,13 +19,14 @@ import {
   buildSignedStorageImageUrl,
   parseStorageImageUrl,
 } from "@repo/shared/storage/signed-url";
+import { getPublicAppUrlFromEnv } from "@repo/shared/runtime-app-url";
 import type { ImageInputFile } from "./types";
 
 /**
  * 取站内公开基址，与下方 toAbsoluteUrl 一致；用于 parseStorageImageUrl 判定第一方。
  */
 function getPublicBaseUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "";
+  return getPublicAppUrlFromEnv("");
 }
 
 function toAbsoluteUrl(url: string) {
@@ -43,6 +45,32 @@ function getSignedStorageUrl(image: ImageInputFile) {
   }
 }
 
+function isObjectStoragePresignedUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.searchParams.has("X-Amz-Signature") ||
+      parsed.searchParams.has("Signature") ||
+      parsed.searchParams.has("Expires")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isSignedInAppStorageUrl(url: string) {
+  try {
+    const parsed = new URL(url, getPublicBaseUrl() || "http://localhost");
+    return (
+      parsed.pathname.startsWith("/api/storage/") &&
+      parsed.searchParams.has("sig") &&
+      parsed.searchParams.has("exp")
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 构造 data: base64 内联 URL（最后兜底，需有字节）。
  */
@@ -56,17 +84,38 @@ function toBase64DataUrl(image: ImageInputFile) {
  * 把一张输入图解析为发送给上游的 image_url（或 data: base64）。
  *
  * @param image 输入图，含可选 storageKey/url/data。
- * @returns 站内签名 URL（首选）/ 第一方透传 URL / base64 / 外链（无字节兜底）。
+ * @returns 对象存储直连 URL / 站内签名 URL / 第一方透传 URL / base64 / 外链（无字节兜底）。
  * @remarks 纯同步、无副作用、无网络 I/O。
  */
 export function getInputImageUrl(image: ImageInputFile) {
+  const existingUrl = image.url?.trim();
+  if (existingUrl?.startsWith("data:")) return existingUrl;
+
+  if (
+    existingUrl &&
+    (existingUrl.startsWith("http://") || existingUrl.startsWith("https://")) &&
+    image.storageKey?.trim() &&
+    (!parseStorageImageUrl(existingUrl, getPublicBaseUrl()) &&
+      isObjectStoragePresignedUrl(existingUrl))
+  ) {
+    return existingUrl;
+  }
+
+  if (
+    existingUrl &&
+    image.storageKey?.trim() &&
+    isSignedInAppStorageUrl(existingUrl)
+  ) {
+    const absoluteExistingUrl = toAbsoluteUrl(existingUrl);
+    if (absoluteExistingUrl) return absoluteExistingUrl;
+  }
+
   const signedStorageUrl = getSignedStorageUrl(image);
   const absoluteSignedStorageUrl = signedStorageUrl
     ? toAbsoluteUrl(signedStorageUrl)
     : null;
   if (absoluteSignedStorageUrl) return absoluteSignedStorageUrl;
 
-  const existingUrl = image.url?.trim();
   if (existingUrl) {
     // data: URL 原样返回（已是内联字节，无下载风险）。
     if (existingUrl.startsWith("data:")) return existingUrl;

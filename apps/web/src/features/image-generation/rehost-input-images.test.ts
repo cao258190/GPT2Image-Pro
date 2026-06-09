@@ -4,18 +4,25 @@ import type { ImageInputFile } from "./types";
 const runtimeSettingMock = vi.hoisted(() => vi.fn());
 const storageMocks = vi.hoisted(() => {
   const putObject = vi.fn();
+  const getSignedUrl = vi.fn();
   return {
     putObject,
-    getStorageProvider: vi.fn(async () => ({ putObject })),
+    getSignedUrl,
+    getStorageProvider: vi.fn(async () => ({ putObject, getSignedUrl })),
   };
 });
 const fetchMocks = vi.hoisted(() => ({
   fetchPublicImage: vi.fn(),
 }));
 const logMock = vi.hoisted(() => ({ logWarn: vi.fn() }));
+const PUBLIC_BASE_URL = "https://runtime.example.test";
 
 vi.mock("@repo/shared/system-settings", () => ({
   getRuntimeSettingString: runtimeSettingMock,
+}));
+
+vi.mock("@repo/shared/runtime-app-url-server", () => ({
+  getRuntimePublicAppUrl: async () => PUBLIC_BASE_URL,
 }));
 
 vi.mock("@repo/shared/storage/providers", () => ({
@@ -54,6 +61,10 @@ beforeEach(() => {
     return "";
   });
   storageMocks.putObject.mockReset();
+  storageMocks.getSignedUrl.mockReset();
+  storageMocks.getSignedUrl.mockResolvedValue(
+    "https://rustfs.example.test/generations/user-1/rehost/gen-1-0.png?X-Amz-Signature=abc"
+  );
   storageMocks.getStorageProvider.mockClear();
   fetchMocks.fetchPublicImage.mockReset();
   logMock.logWarn.mockReset();
@@ -61,25 +72,42 @@ beforeEach(() => {
 });
 
 describe("ensureInputImageRehosted", () => {
-  it("returns the image unchanged when it already has a storageKey", async () => {
+  it("refreshes the signed URL when it already has a storageKey", async () => {
     const image = makeImage({
+      url: "https://rustfs.example.test/old.png?X-Amz-Signature=expired",
       storageKey: "user-1/abc.png",
       storageBucket: "generations",
     });
     const result = await ensureInputImageRehosted(image, ctx);
-    expect(result).toBe(image);
     expect(storageMocks.putObject).not.toHaveBeenCalled();
     expect(fetchMocks.fetchPublicImage).not.toHaveBeenCalled();
+    expect(storageMocks.getSignedUrl).toHaveBeenCalledWith(
+      "user-1/abc.png",
+      "generations",
+      60 * 60
+    );
+    expect(result.url).toBe(
+      "https://rustfs.example.test/generations/user-1/rehost/gen-1-0.png?X-Amz-Signature=abc"
+    );
   });
 
-  it("returns the image unchanged when url is first-party", async () => {
+  it("refreshes first-party storage urls to direct storage signed urls", async () => {
     const image = makeImage({
-      url: "https://app.example.test/api/storage/generations/user-1/x.png?sig=a&exp=1",
+      url: `${PUBLIC_BASE_URL}/api/storage/generations/user-1/x.png?sig=a&exp=1`,
     });
     const result = await ensureInputImageRehosted(image, ctx);
-    expect(result).toBe(image);
     expect(storageMocks.putObject).not.toHaveBeenCalled();
     expect(fetchMocks.fetchPublicImage).not.toHaveBeenCalled();
+    expect(storageMocks.getSignedUrl).toHaveBeenCalledWith(
+      "user-1/x.png",
+      "generations",
+      60 * 60
+    );
+    expect(result.storageKey).toBe("user-1/x.png");
+    expect(result.storageBucket).toBe("generations");
+    expect(result.url).toBe(
+      "https://rustfs.example.test/generations/user-1/rehost/gen-1-0.png?X-Amz-Signature=abc"
+    );
   });
 
   it("uploads existing bytes for an external url without downloading", async () => {
@@ -99,8 +127,13 @@ describe("ensureInputImageRehosted", () => {
     );
     expect(result.storageKey).toBe("user-1/rehost/gen-1-0.png");
     expect(result.storageBucket).toBe("generations");
-    expect(result.url).toContain(
-      "/api/storage/generations/user-1/rehost/gen-1-0.png"
+    expect(storageMocks.getSignedUrl).toHaveBeenCalledWith(
+      "user-1/rehost/gen-1-0.png",
+      "generations",
+      60 * 60
+    );
+    expect(result.url).toBe(
+      "https://rustfs.example.test/generations/user-1/rehost/gen-1-0.png?X-Amz-Signature=abc"
     );
   });
 
@@ -124,6 +157,37 @@ describe("ensureInputImageRehosted", () => {
       "image/jpeg"
     );
     expect(result.storageKey).toBe("user-1/rehost/gen-1-0.jpg");
+  });
+
+  it("falls back to an in-app signed url when direct storage signing fails", async () => {
+    storageMocks.getSignedUrl.mockRejectedValue(new Error("sign failed"));
+    const image = makeImage({
+      url: "https://cdn.thirdparty.example/p.png",
+      data: Buffer.from([1, 2, 3]),
+      type: "image/png",
+    });
+    const result = await ensureInputImageRehosted(image, ctx);
+
+    expect(result.url).toContain(
+      `${PUBLIC_BASE_URL}/api/storage/generations/user-1/rehost/gen-1-0.png`
+    );
+    expect(result.url).toContain("sig=");
+    expect(logMock.logWarn).toHaveBeenCalled();
+  });
+
+  it("absolutizes relative provider signed urls with the runtime public base", async () => {
+    storageMocks.getSignedUrl.mockResolvedValue(
+      "/api/storage/generations/user-1/rehost/gen-1-0.png?sig=abc&exp=1"
+    );
+    const image = makeImage({
+      storageKey: "user-1/rehost/gen-1-0.png",
+      storageBucket: "generations",
+    });
+    const result = await ensureInputImageRehosted(image, ctx);
+
+    expect(result.url).toBe(
+      `${PUBLIC_BASE_URL}/api/storage/generations/user-1/rehost/gen-1-0.png?sig=abc&exp=1`
+    );
   });
 
   it("keeps bytes when upload fails", async () => {

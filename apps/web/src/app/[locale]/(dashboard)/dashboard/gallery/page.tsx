@@ -1,7 +1,6 @@
 import { db } from "@repo/database";
 import { generation } from "@repo/database/schema";
 import { getCurrentUser } from "@repo/shared/auth/server";
-import { buildSignedStorageImageUrl } from "@repo/shared/storage/signed-url";
 import { getAppTimeZone } from "@repo/shared/time-zone/server";
 import { and, count, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
@@ -11,6 +10,10 @@ import {
   extractGenerationReferenceImages,
   extractPromptRepairNotice,
 } from "@/features/image-generation/generation-metadata";
+import {
+  buildStoredImageReadUrl,
+  resolveStoredImageReadUrls,
+} from "@/features/image-generation/storage-url";
 import { hasLayeredMeta } from "@/features/psd-export/layered-meta";
 
 interface GalleryPageProps {
@@ -20,64 +23,76 @@ interface GalleryPageProps {
 type GalleryOutputRole = "final" | "agent_draft" | "upload";
 type GalleryTab = "final" | "agent-drafts" | "uploads";
 
-function extractAgentDraftGenerations(
+async function extractAgentDraftGenerations(
   rows: Array<typeof generation.$inferSelect>
 ) {
-  return rows.flatMap((g) => {
-    const referenceImages = extractGenerationReferenceImages(g.metadata);
-    const outputImage =
-      g.metadata &&
-      typeof g.metadata === "object" &&
-      !Array.isArray(g.metadata) &&
-      g.metadata.outputImage &&
-      typeof g.metadata.outputImage === "object" &&
-      !Array.isArray(g.metadata.outputImage)
-        ? (g.metadata.outputImage as Record<string, unknown>)
-        : null;
-    const outputs = Array.isArray(outputImage?.imageOutputs)
-      ? outputImage.imageOutputs
-      : [];
-    return outputs.flatMap((item, index) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-      const output = item as Record<string, unknown>;
-      if (output.role !== "agent_draft" && output.primary !== false) return [];
-      const storageKey =
-        typeof output.storageKey === "string" ? output.storageKey : null;
-      const storedImageUrl = buildSignedStorageImageUrl(
-        storageKey,
-        g.storageBucket
+  const rowItems = await Promise.all(
+    rows.map(async (g) => {
+      const referenceImages = await resolveStoredImageReadUrls(
+        extractGenerationReferenceImages(g.metadata)
       );
-      const fallbackImageUrl =
-        typeof output.imageUrl === "string" ? output.imageUrl : null;
-      if (!storedImageUrl && !fallbackImageUrl) return [];
-      const generationId =
-        typeof output.generationId === "string"
-          ? output.generationId
-          : `${g.id}-${index + 1}`;
-      return [
-        {
-          id: generationId,
-          parentId: g.id,
-          prompt: g.prompt,
-          revisedPrompt:
-            typeof output.revisedPrompt === "string"
-              ? output.revisedPrompt
-              : g.revisedPrompt,
-          promptRepairNotice: extractPromptRepairNotice(g.metadata),
-          model: g.model,
-          size: typeof output.size === "string" ? output.size : g.size,
-          status: g.status,
-          creditsConsumed: 0,
-          storageKey,
-          storageBucket: g.storageBucket,
-          imageUrl: storedImageUrl || fallbackImageUrl,
-          createdAt: g.createdAt.toISOString(),
-          outputRole: "agent_draft" as GalleryOutputRole,
-          referenceImages,
-        },
-      ];
-    });
-  });
+      const outputImage =
+        g.metadata &&
+        typeof g.metadata === "object" &&
+        !Array.isArray(g.metadata) &&
+        g.metadata.outputImage &&
+        typeof g.metadata.outputImage === "object" &&
+        !Array.isArray(g.metadata.outputImage)
+          ? (g.metadata.outputImage as Record<string, unknown>)
+          : null;
+      const outputs = Array.isArray(outputImage?.imageOutputs)
+        ? outputImage.imageOutputs
+        : [];
+      const items = await Promise.all(
+        outputs.map(async (item, index) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) {
+            return [];
+          }
+          const output = item as Record<string, unknown>;
+          if (output.role !== "agent_draft" && output.primary !== false) {
+            return [];
+          }
+          const storageKey =
+            typeof output.storageKey === "string" ? output.storageKey : null;
+          const storedImageUrl = await buildStoredImageReadUrl(
+            storageKey,
+            g.storageBucket
+          );
+          const fallbackImageUrl =
+            typeof output.imageUrl === "string" ? output.imageUrl : null;
+          if (!storedImageUrl && !fallbackImageUrl) return [];
+          const generationId =
+            typeof output.generationId === "string"
+              ? output.generationId
+              : `${g.id}-${index + 1}`;
+          return [
+            {
+              id: generationId,
+              parentId: g.id,
+              prompt: g.prompt,
+              revisedPrompt:
+                typeof output.revisedPrompt === "string"
+                  ? output.revisedPrompt
+                  : g.revisedPrompt,
+              promptRepairNotice: extractPromptRepairNotice(g.metadata),
+              model: g.model,
+              size: typeof output.size === "string" ? output.size : g.size,
+              status: g.status,
+              creditsConsumed: 0,
+              storageKey,
+              storageBucket: g.storageBucket,
+              imageUrl: storedImageUrl || fallbackImageUrl,
+              createdAt: g.createdAt.toISOString(),
+              outputRole: "agent_draft" as GalleryOutputRole,
+              referenceImages,
+            },
+          ];
+        })
+      );
+      return items.flat();
+    })
+  );
+  return rowItems.flat();
 }
 
 function formatUploadedImageSize(
@@ -91,30 +106,35 @@ function formatUploadedImageSize(
   return copy("Uploaded", "上传图");
 }
 
-function extractUploadedImageGenerations(
+async function extractUploadedImageGenerations(
   rows: Array<typeof generation.$inferSelect>,
   copy: (en: string, zh: string) => string
 ) {
-  return rows.flatMap((g) => {
-    const referenceImages = extractGenerationReferenceImages(g.metadata);
-    return referenceImages.map((image, index) => ({
-      id: `${g.id}-upload-${image.id || index + 1}`,
-      parentId: g.id,
-      prompt: g.prompt,
-      revisedPrompt: g.revisedPrompt,
-      promptRepairNotice: extractPromptRepairNotice(g.metadata),
-      model: image.type || copy("User upload", "用户上传"),
-      size: formatUploadedImageSize(image, copy),
-      status: "completed" as const,
-      creditsConsumed: 0,
-      storageKey: image.storageKey,
-      storageBucket: image.storageBucket,
-      imageUrl: image.imageUrl,
-      createdAt: g.createdAt.toISOString(),
-      outputRole: "upload" as GalleryOutputRole,
-      referenceImages,
-    }));
-  });
+  const rowItems = await Promise.all(
+    rows.map(async (g) => {
+      const referenceImages = await resolveStoredImageReadUrls(
+        extractGenerationReferenceImages(g.metadata)
+      );
+      return referenceImages.map((image, index) => ({
+        id: `${g.id}-upload-${image.id || index + 1}`,
+        parentId: g.id,
+        prompt: g.prompt,
+        revisedPrompt: g.revisedPrompt,
+        promptRepairNotice: extractPromptRepairNotice(g.metadata),
+        model: image.type || copy("User upload", "用户上传"),
+        size: formatUploadedImageSize(image, copy),
+        status: "completed" as const,
+        creditsConsumed: 0,
+        storageKey: image.storageKey,
+        storageBucket: image.storageBucket,
+        imageUrl: image.imageUrl,
+        createdAt: g.createdAt.toISOString(),
+        outputRole: "upload" as GalleryOutputRole,
+        referenceImages,
+      }));
+    })
+  );
+  return rowItems.flat();
 }
 
 export default async function GalleryPage({ searchParams }: GalleryPageProps) {
@@ -213,8 +233,8 @@ export default async function GalleryPage({ searchParams }: GalleryPageProps) {
     getAppTimeZone(),
   ]);
 
-  const allDraftItems = extractAgentDraftGenerations(draftParentRows);
-  const allUploadItems = extractUploadedImageGenerations(
+  const allDraftItems = await extractAgentDraftGenerations(draftParentRows);
+  const allUploadItems = await extractUploadedImageGenerations(
     uploadParentRows,
     copy
   );
@@ -223,24 +243,31 @@ export default async function GalleryPage({ searchParams }: GalleryPageProps) {
       ? allDraftItems.slice(0, limit)
       : activeTab === "uploads"
         ? allUploadItems.slice(0, limit)
-        : finalRows.map((g) => ({
-            id: g.id,
-            parentId: g.id,
-            prompt: g.prompt,
-            revisedPrompt: g.revisedPrompt,
-            promptRepairNotice: extractPromptRepairNotice(g.metadata),
-            model: g.model,
-            size: g.size,
-            status: g.status,
-            creditsConsumed: g.creditsConsumed,
-            storageKey: g.storageKey,
-            storageBucket: g.storageBucket,
-            imageUrl: buildSignedStorageImageUrl(g.storageKey, g.storageBucket),
-            createdAt: g.createdAt.toISOString(),
-            outputRole: "final" as GalleryOutputRole,
-            referenceImages: extractGenerationReferenceImages(g.metadata),
-            isLayered: hasLayeredMeta(g.metadata),
-          }));
+        : await Promise.all(
+            finalRows.map(async (g) => ({
+              id: g.id,
+              parentId: g.id,
+              prompt: g.prompt,
+              revisedPrompt: g.revisedPrompt,
+              promptRepairNotice: extractPromptRepairNotice(g.metadata),
+              model: g.model,
+              size: g.size,
+              status: g.status,
+              creditsConsumed: g.creditsConsumed,
+              storageKey: g.storageKey,
+              storageBucket: g.storageBucket,
+              imageUrl: await buildStoredImageReadUrl(
+                g.storageKey,
+                g.storageBucket
+              ),
+              createdAt: g.createdAt.toISOString(),
+              outputRole: "final" as GalleryOutputRole,
+              referenceImages: await resolveStoredImageReadUrls(
+                extractGenerationReferenceImages(g.metadata)
+              ),
+              isLayered: hasLayeredMeta(g.metadata),
+            }))
+          );
 
   const finalCount =
     (completedStorageCountResult[0]?.count ?? 0) -

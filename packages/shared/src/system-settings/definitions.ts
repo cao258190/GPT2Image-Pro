@@ -18,6 +18,7 @@ export type SettingValueType =
   | "json";
 
 export type SettingKey =
+  | "APP_URL"
   | "NEXT_PUBLIC_APP_URL"
   | "NEXT_PUBLIC_APP_NAME"
   | "NEXT_PUBLIC_ASSET_PREFIX"
@@ -26,6 +27,7 @@ export type SettingKey =
   | "SELF_USE_MODE_ENABLED"
   | "BETTER_AUTH_SECRET"
   | "BETTER_AUTH_URL"
+  | "BETTER_AUTH_TRUSTED_ORIGINS"
   | "GOOGLE_CLIENT_ID"
   | "GOOGLE_CLIENT_SECRET"
   | "GITHUB_CLIENT_ID"
@@ -347,9 +349,19 @@ const CREDIT_PACKAGE_MATRIX_EXAMPLE = {
 
 export const SYSTEM_SETTING_DEFINITIONS = [
   {
+    key: "APP_URL",
+    label: "运行时应用地址",
+    description:
+      "Web 站点公开访问地址，用于服务端回调、邮件链接、支付回跳和 OpenAI 下载图片。优先于 NEXT_PUBLIC_APP_URL，修改后重启/重建容器即可生效，无需重建镜像。",
+    category: "general",
+    valueType: "string",
+    requiresRestart: true,
+  },
+  {
     key: "NEXT_PUBLIC_APP_URL",
     label: "应用地址",
-    description: "Web 站点公开访问地址，用于回调、邮件链接和图片 URL。",
+    description:
+      "构建期公开应用地址，主要用于静态 SEO/客户端兜底。服务端运行时链接优先使用 APP_URL。",
     category: "general",
     valueType: "string",
     requiresRestart: true,
@@ -425,6 +437,15 @@ export const SYSTEM_SETTING_DEFINITIONS = [
     key: "BETTER_AUTH_URL",
     label: "认证服务地址",
     description: "Better Auth 基础 URL，OAuth 回调依赖此值。",
+    category: "auth",
+    valueType: "string",
+    requiresRestart: true,
+  },
+  {
+    key: "BETTER_AUTH_TRUSTED_ORIGINS",
+    label: "认证可信来源",
+    description:
+      "额外允许的浏览器 Origin，多个域名用英文逗号分隔。反代、多域名访问或前后端域名不一致时配置。",
     category: "auth",
     valueType: "string",
     requiresRestart: true,

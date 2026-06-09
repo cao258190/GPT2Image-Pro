@@ -2,7 +2,6 @@ import { getCurrentUser } from "@repo/shared/auth/server";
 
 import { getCreditsBalance } from "@repo/shared/credits/core";
 import { isContentModerationEnabled } from "@repo/shared/moderation";
-import { buildSignedStorageImageUrl } from "@repo/shared/storage/signed-url";
 import { getPlanCapabilitySnapshot } from "@repo/shared/subscription/services/plan-capabilities";
 import { getPlanUploadLimits } from "@repo/shared/subscription/services/upload-limits";
 import { getUserPlan } from "@repo/shared/subscription/services/user-plan";
@@ -15,6 +14,7 @@ import { hasLayeredMeta } from "@/features/psd-export/layered-meta";
 import { getRuntimeImageBaseCreditPricing } from "@/features/image-generation/pricing-settings";
 import { getUserRecentGenerations } from "@/features/image-generation/queries";
 import { getUserApiConfig } from "@/features/image-generation/service";
+import { buildStoredImageReadUrl } from "@/features/image-generation/storage-url";
 import {
   getUserImageBackendPreference,
   listSelectableImageBackendGroups,
@@ -73,18 +73,20 @@ export default async function CreatePage() {
 
   const balance = creditsData?.balance || 0;
 
-  const recents = recentGenerations.map((g) => ({
-    id: g.id,
-    prompt: g.prompt,
-    revisedPrompt: g.revisedPrompt,
-    model: g.model,
-    size: g.size,
-    creditsConsumed: g.creditsConsumed,
-    status: g.status,
-    imageUrl: buildSignedStorageImageUrl(g.storageKey, g.storageBucket),
-    isLayered: hasLayeredMeta(g.metadata),
-    createdAt: g.createdAt.toISOString(),
-  }));
+  const recents = await Promise.all(
+    recentGenerations.map(async (g) => ({
+      id: g.id,
+      prompt: g.prompt,
+      revisedPrompt: g.revisedPrompt,
+      model: g.model,
+      size: g.size,
+      creditsConsumed: g.creditsConsumed,
+      status: g.status,
+      imageUrl: await buildStoredImageReadUrl(g.storageKey, g.storageBucket),
+      isLayered: hasLayeredMeta(g.metadata),
+      createdAt: g.createdAt.toISOString(),
+    }))
+  );
 
   return (
     <CreatePageClient

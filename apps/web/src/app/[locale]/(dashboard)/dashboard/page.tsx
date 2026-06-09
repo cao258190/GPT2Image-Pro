@@ -2,7 +2,6 @@ import { db } from "@repo/database";
 import { creditsBalance, generation } from "@repo/database/schema";
 import { auth } from "@repo/shared/auth";
 import { formatCredits } from "@repo/shared/credits/format";
-import { buildSignedStorageImageUrl } from "@repo/shared/storage/signed-url";
 import { getAppTimeZone } from "@repo/shared/time-zone/server";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -25,6 +24,7 @@ import { RecentCreationsClient } from "@/features/image-generation/components/re
 import { hasLayeredMeta } from "@/features/psd-export/layered-meta";
 import { getRuntimeImageBaseCreditPricing } from "@/features/image-generation/pricing-settings";
 import { getImageBaseCreditPricing } from "@/features/image-generation/resolution";
+import { buildStoredImageReadUrl } from "@/features/image-generation/storage-url";
 import { Link } from "@/i18n/routing";
 import { getPlanCapabilitySnapshot } from "@repo/shared/subscription/services/plan-capabilities";
 import { getUserPlan } from "@repo/shared/subscription/services/user-plan";
@@ -85,20 +85,22 @@ export default async function DashboardPage() {
     backendGroups[0] ||
     null;
 
-  const generationsWithUrls = recentGenerations.map((gen) => ({
-    id: gen.id,
-    prompt: gen.prompt,
-    revisedPrompt: gen.revisedPrompt,
-    model: gen.model,
-    size: gen.size,
-    status: gen.status,
-    creditsConsumed: gen.creditsConsumed,
-    storageKey: gen.storageKey,
-    storageBucket: gen.storageBucket,
-    imageUrl: buildSignedStorageImageUrl(gen.storageKey, gen.storageBucket),
-    isLayered: hasLayeredMeta(gen.metadata),
-    createdAt: gen.createdAt.toISOString(),
-  }));
+  const generationsWithUrls = await Promise.all(
+    recentGenerations.map(async (gen) => ({
+      id: gen.id,
+      prompt: gen.prompt,
+      revisedPrompt: gen.revisedPrompt,
+      model: gen.model,
+      size: gen.size,
+      status: gen.status,
+      creditsConsumed: gen.creditsConsumed,
+      storageKey: gen.storageKey,
+      storageBucket: gen.storageBucket,
+      imageUrl: await buildStoredImageReadUrl(gen.storageKey, gen.storageBucket),
+      isLayered: hasLayeredMeta(gen.metadata),
+      createdAt: gen.createdAt.toISOString(),
+    }))
+  );
 
   return (
     <div className="container mx-auto px-4 py-6 md:px-6">

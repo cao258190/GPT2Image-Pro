@@ -153,6 +153,10 @@ export type ThinkingLevel =
   | "xhigh";
 
 export interface EditImageParams {
+  /** Internal request user id, used for input-image re-host object keys. */
+  userId?: string;
+  /** Internal generation id, used for input-image re-host object keys. */
+  generationId?: string;
   prompt: string;
   apiPrompt?: string;
   promptOptimization?: boolean;
@@ -181,6 +185,10 @@ export interface EditImageParams {
 }
 
 export interface ChatImageParams {
+  /** Internal request user id, used for input-image re-host object keys. */
+  userId?: string;
+  /** Internal generation id, used for input-image re-host object keys. */
+  generationId?: string;
   prompt: string;
   apiPrompt?: string;
   fileContext?: string;

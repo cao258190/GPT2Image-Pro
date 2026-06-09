@@ -16,10 +16,9 @@ export const authClient = createAuthClient({
    * 认证 API 基础 URL
    * 默认指向 /api/auth，与 API 路由匹配
    */
-  baseURL:
-    typeof window !== "undefined"
-      ? window.location.origin
-      : process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+  ...(typeof window !== "undefined"
+    ? { baseURL: window.location.origin }
+    : {}),
 });
 
 /**

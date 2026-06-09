@@ -3676,11 +3676,12 @@ export async function getEffectiveConfig(
 }
 
 /**
- * api 后端（pool-api）分发前的输入图 re-host 守卫。
+ * api/Responses 后端分发前的输入图 re-host 守卫。
  *
- * 仅在最终选定的后端为 pool-api 且已知 userId 时生效（account 后端不受影响）：
- * 把待发送给上游的输入图、mask、历史图逐张确保转存到我方对象存储，避免把第三方
- * 外链交给上游（上游下载外链会被图床限流返回 "failed download file 429"）。
+ * 仅跳过 ChatGPT Web 账号后端；其它直接调用上游 API 的后端都会在发送前刷新
+ * storageKey 对应的对象存储预签名 URL，避免复用上传阶段的短效 URL。对无
+ * storageKey 的第三方外链，会尝试转存到我方对象存储，避免上游下载外链被图床
+ * 限流返回 "failed download file 429"。
  *
  * 幂等：直接原地改写 params 内的 image 对象/字符串，已转存（带 storageKey 或
  * 第一方 url）的项会被 ensureInputImageRehosted 短路；重试时不会重复下载/上传。
@@ -3693,6 +3694,8 @@ export async function getEffectiveConfig(
 async function rehostApiBackendInputImages(
   config: ApiConfig,
   params: {
+    userId?: string;
+    generationId?: string;
     images?: ImageInputFile[];
     mask?: ImageInputFile;
     history?: ChatImageParams["history"];
@@ -3700,11 +3703,11 @@ async function rehostApiBackendInputImages(
   signal?: AbortSignal
 ): Promise<void> {
   const backend = config.backend;
-  if (backend?.type !== "pool-api") return;
-  const userId = backend.userId?.trim();
+  if (isPoolAccountBackend(config, "web")) return;
+  const userId = params.userId?.trim() || backend?.userId?.trim();
   if (!userId) return;
 
-  const generationId = backend.id || "rehost";
+  const generationId = params.generationId?.trim() || backend?.id || "rehost";
 
   if (params.images?.length) {
     for (let index = 0; index < params.images.length; index++) {
@@ -3895,7 +3898,15 @@ export async function editImage(
   if (config.backend?.reportResult) {
     return retryPoolBackendResult(
       config,
-      (candidate) => editImage(candidate, params, callbacks),
+      (candidate) =>
+        editImage(
+          candidate,
+          {
+            ...params,
+            userId: params.userId || candidate.backend?.userId,
+          },
+          callbacks
+        ),
       {
         mixWebFirst: params.mixWebFirst,
         accountBackendPreference: params.requiresResponsesBackend
@@ -3910,10 +3921,15 @@ export async function editImage(
     );
   }
 
-  // pool-api 后端分发前确保输入图/ mask 已 re-host，避免把外链交给上游。
+  // API/Responses 后端分发前确保输入图/ mask 已 re-host 并刷新签名 URL。
   await rehostApiBackendInputImages(
     config,
-    { images: params.images, mask: params.mask },
+    {
+      userId: params.userId || config.backend?.userId,
+      generationId: params.generationId,
+      images: params.images,
+      mask: params.mask,
+    },
     params.signal
   );
 
@@ -4042,7 +4058,15 @@ export async function generateChatImage(
   if (config.backend?.reportResult) {
     return retryPoolBackendResult(
       config,
-      (candidate) => generateChatImage(candidate, params, callbacks),
+      (candidate) =>
+        generateChatImage(
+          candidate,
+          {
+            ...params,
+            userId: params.userId || candidate.backend?.userId,
+          },
+          callbacks
+        ),
       {
         mixWebFirst: params.mixWebFirst,
         accountBackendPreference: params.requiresResponsesBackend
@@ -4052,10 +4076,15 @@ export async function generateChatImage(
     );
   }
 
-  // pool-api 后端分发前确保输入图/历史图已 re-host，避免把外链交给上游。
+  // API/Responses 后端分发前确保输入图/历史图已 re-host 并刷新签名 URL。
   await rehostApiBackendInputImages(
     config,
-    { images: params.images, history: params.history },
+    {
+      userId: params.userId || config.backend?.userId,
+      generationId: params.generationId,
+      images: params.images,
+      history: params.history,
+    },
     params.signal
   );
 

@@ -1,10 +1,12 @@
+import { getPublicAppUrlFromEnv } from "../runtime-app-url";
+
 export const siteConfig = {
   name: "GPT2IMAGE",
 
   description:
     "AI-powered chat-to-image generation platform. Transform your words into stunning visuals through natural conversation.",
 
-  url: process.env.NEXT_PUBLIC_APP_URL || "https://gpt2image.com",
+  url: getPublicAppUrlFromEnv("https://gpt2image.com"),
 
   ogImage: "/og-image.png",
 

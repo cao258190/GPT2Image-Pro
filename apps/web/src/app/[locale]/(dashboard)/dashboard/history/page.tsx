@@ -3,7 +3,6 @@ import { getLocale } from "next-intl/server";
 import { redirect } from "next/navigation";
 import { db } from "@repo/database";
 import { generation } from "@repo/database/schema";
-import { buildSignedStorageImageUrl } from "@repo/shared/storage/signed-url";
 import { HistoryClient } from "@/features/image-generation/components/history-client";
 import { extractGenerationCreditDetails } from "@/features/image-generation/credit-calculation-details";
 import { hasLayeredMeta } from "@/features/psd-export/layered-meta";
@@ -11,6 +10,10 @@ import {
   extractGenerationReferenceImages,
   extractPromptRepairNotice,
 } from "@/features/image-generation/generation-metadata";
+import {
+  buildStoredImageReadUrl,
+  resolveStoredImageReadUrls,
+} from "@/features/image-generation/storage-url";
 import { getCurrentUser } from "@repo/shared/auth/server";
 import { getAppTimeZone } from "@repo/shared/time-zone/server";
 
@@ -46,27 +49,31 @@ export default async function HistoryPage({ searchParams }: HistoryPageProps) {
     getAppTimeZone(),
   ]);
 
-  const withUrls = generations.map((g) => ({
-    id: g.id,
-    prompt: g.prompt,
-    revisedPrompt: g.revisedPrompt,
-    promptRepairNotice: extractPromptRepairNotice(g.metadata),
-    model: g.model,
-    size: g.size,
-    status: g.status,
-    creditsConsumed: g.creditsConsumed,
-    creditDetails: extractGenerationCreditDetails(
-      g.metadata,
-      g.creditsConsumed
-    ),
-    error: g.error,
-    storageKey: g.storageKey,
-    storageBucket: g.storageBucket,
-    imageUrl: buildSignedStorageImageUrl(g.storageKey, g.storageBucket),
-    referenceImages: extractGenerationReferenceImages(g.metadata),
-    isLayered: hasLayeredMeta(g.metadata),
-    createdAt: g.createdAt.toISOString(),
-  }));
+  const withUrls = await Promise.all(
+    generations.map(async (g) => ({
+      id: g.id,
+      prompt: g.prompt,
+      revisedPrompt: g.revisedPrompt,
+      promptRepairNotice: extractPromptRepairNotice(g.metadata),
+      model: g.model,
+      size: g.size,
+      status: g.status,
+      creditsConsumed: g.creditsConsumed,
+      creditDetails: extractGenerationCreditDetails(
+        g.metadata,
+        g.creditsConsumed
+      ),
+      error: g.error,
+      storageKey: g.storageKey,
+      storageBucket: g.storageBucket,
+      imageUrl: await buildStoredImageReadUrl(g.storageKey, g.storageBucket),
+      referenceImages: await resolveStoredImageReadUrls(
+        extractGenerationReferenceImages(g.metadata)
+      ),
+      isLayered: hasLayeredMeta(g.metadata),
+      createdAt: g.createdAt.toISOString(),
+    }))
+  );
 
   return (
     <div className="container mx-auto space-y-8 px-4 py-6 md:px-6">

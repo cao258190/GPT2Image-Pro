@@ -22,7 +22,11 @@ const END = "# END GPT2IMAGE ADMIN SETTINGS";
 
 describe("system settings env file sync", () => {
   it("only writes public settings and explicitly managed internal keys", () => {
+    expect(shouldSyncSettingToEnvFile("APP_URL")).toBe(true);
     expect(shouldSyncSettingToEnvFile("NEXT_PUBLIC_APP_URL")).toBe(true);
+    expect(shouldSyncSettingToEnvFile("BETTER_AUTH_TRUSTED_ORIGINS")).toBe(
+      true
+    );
     expect(shouldSyncSettingToEnvFile("SUB2API_AUTO_SYNC_TASKS")).toBe(true);
 
     expect(shouldSyncSettingToEnvFile("__internal_job_scheduler:sub2api-sync")).toBe(
@@ -49,6 +53,7 @@ describe("buildManagedEnvBlock", () => {
 
   it("only includes synced keys, sorted, wrapped in BEGIN/END markers", () => {
     const block = buildManagedEnvBlock([
+      { key: "APP_URL", value: "https://runtime.example.com" },
       { key: "NEXT_PUBLIC_APP_URL", value: "https://example.com" },
       // 非托管 key（不在定义且非内部白名单）应被过滤掉
       { key: "SOME_UNMANAGED_KEY", value: "secret" },
@@ -66,6 +71,7 @@ describe("buildManagedEnvBlock", () => {
     expect(block.indexOf("APP_TIME_ZONE")).toBeLessThan(
       block.indexOf("NEXT_PUBLIC_APP_URL")
     );
+    expect(block).toContain('APP_URL="https://runtime.example.com"');
   });
 
   it("drops values whose serialized line embeds the block sentinel (S-M9)", () => {
