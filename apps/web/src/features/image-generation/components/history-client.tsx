@@ -48,6 +48,7 @@ export interface HistoryGeneration {
   storageKey: string | null;
   storageBucket: string | null;
   imageUrl: string | null;
+  thumbnailUrl?: string | null;
   referenceImages?: LightboxReferenceImage[];
   isLayered?: boolean;
 }
@@ -188,6 +189,7 @@ export function HistoryClient({
         <ul className="divide-y divide-border">
           {items.map((item) => {
             const summary = creditSummary(item, copy);
+            const thumbnailSourceUrl = item.thumbnailUrl || item.imageUrl;
             return (
               <li key={item.id}>
                 <button
@@ -196,14 +198,14 @@ export function HistoryClient({
                   className="grid w-full grid-cols-[56px_minmax(0,1fr)] items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 md:grid-cols-[64px_minmax(0,1fr)_150px_90px_118px_92px_128px] md:items-center md:gap-3"
                 >
                   <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded border border-border bg-muted md:h-14 md:w-14">
-                    {item.imageUrl && item.status === "completed" ? (
+                    {thumbnailSourceUrl && item.status === "completed" ? (
                       <Image
                         // 列表缩略图(56–64px):请求 w=128 的小图,避免下整图(平均 2.4MB)。
                         // 宽度走"路径段"(非 ?w= 查询参数),绕过 Cloudflare 忽略 query 的边缘
                         // 缓存键(否则命中并下回整张原图、挤占连接、饿死导航)。
                         src={
-                          buildStorageThumbnailUrl(item.imageUrl, 128) ??
-                          item.imageUrl
+                          buildStorageThumbnailUrl(thumbnailSourceUrl, 128) ??
+                          thumbnailSourceUrl
                         }
                         alt={item.prompt}
                         fill

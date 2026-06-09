@@ -26,10 +26,12 @@ import sharp from "sharp";
 
 const GENERATIONS_BUCKET =
   process.env.NEXT_PUBLIC_GENERATIONS_BUCKET_NAME || "generations";
+const UPLOAD_BUCKET = process.env.STORAGE_BUCKET_NAME?.trim();
 
 const ALLOWED_BUCKETS = new Set([
   process.env.NEXT_PUBLIC_AVATARS_BUCKET_NAME || "avatars",
   GENERATIONS_BUCKET,
+  ...(UPLOAD_BUCKET ? [UPLOAD_BUCKET] : []),
 ]);
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -330,10 +332,9 @@ export async function GET(
   const ext = path.extname(fileKey).toLowerCase();
   const mappedContentType = CONTENT_TYPES[ext];
   const contentType = mappedContentType || "application/octet-stream";
-  const cacheControl =
-    bucket === GENERATIONS_BUCKET
-      ? GENERATION_CACHE_CONTROL
-      : PUBLIC_ASSET_CACHE_CONTROL;
+  const cacheControl = isPublicBucket(bucket)
+    ? PUBLIC_ASSET_CACHE_CONTROL
+    : GENERATION_CACHE_CONTROL;
 
   const thumbWidth = THUMB_RESIZABLE_TYPES.has(ext)
     ? parseThumbWidth(pathWidth ?? request.nextUrl.searchParams.get("w"))

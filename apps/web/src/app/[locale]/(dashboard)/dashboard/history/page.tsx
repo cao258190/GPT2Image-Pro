@@ -11,6 +11,7 @@ import {
   extractPromptRepairNotice,
 } from "@/features/image-generation/generation-metadata";
 import {
+  buildStoredImageProxyUrl,
   buildStoredImageReadUrl,
   resolveStoredImageReadUrls,
 } from "@/features/image-generation/storage-url";
@@ -67,6 +68,10 @@ export default async function HistoryPage({ searchParams }: HistoryPageProps) {
       storageKey: g.storageKey,
       storageBucket: g.storageBucket,
       imageUrl: await buildStoredImageReadUrl(g.storageKey, g.storageBucket),
+      thumbnailUrl: await buildStoredImageProxyUrl(
+        g.storageKey,
+        g.storageBucket
+      ),
       referenceImages: await resolveStoredImageReadUrls(
         extractGenerationReferenceImages(g.metadata)
       ),

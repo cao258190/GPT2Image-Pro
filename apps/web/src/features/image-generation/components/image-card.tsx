@@ -12,6 +12,7 @@ export interface ImageCardProps {
   id: string;
   prompt: string;
   imageUrl: string | null;
+  thumbnailUrl?: string | null;
   model: string;
   size: string;
   creditsConsumed: number;
@@ -46,6 +47,7 @@ function formatCreatedDate(
 export function ImageCard({
   prompt,
   imageUrl,
+  thumbnailUrl: sourceThumbnailUrl,
   model,
   status,
   createdAt,
@@ -55,11 +57,13 @@ export function ImageCard({
 }: ImageCardProps) {
   const locale = useLocale();
   const clickable = Boolean(onClick);
-  // 列表缩略图:对同源存储图(/api/storage)请求按需缩放后的小图(w=640),把全分辨率
-  // 大图(平均 2.4MB)降到缩略图尺寸,大幅降低列表的下载/解码/内存占用。宽度走"路径段"
-  // (而非 ?w= 查询参数),以绕过 Cloudflare 忽略 query 的边缘缓存键——否则会命中并下回
-  // 整张原图、挤占 HTTP/2 连接带宽、饿死导航请求。非存储图(外链回退)保持原样。
-  const thumbnailUrl = buildStorageThumbnailUrl(imageUrl, 640);
+  // 列表缩略图:优先使用服务端给出的同源存储 URL(/api/storage),再请求按需缩放后
+  // 的小图(w=640)。这样原图可继续走 RustFS/S3 直连,列表不会下载完整原图。
+  // 宽度走"路径段"(而非 ?w= 查询参数),以绕过 Cloudflare 忽略 query 的边缘缓存键。
+  const thumbnailUrl =
+    buildStorageThumbnailUrl(sourceThumbnailUrl || imageUrl, 640) ||
+    sourceThumbnailUrl ||
+    imageUrl;
 
   return (
     <Card

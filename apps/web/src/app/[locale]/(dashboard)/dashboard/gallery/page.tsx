@@ -11,6 +11,7 @@ import {
   extractPromptRepairNotice,
 } from "@/features/image-generation/generation-metadata";
 import {
+  buildStoredImageProxyUrl,
   buildStoredImageReadUrl,
   resolveStoredImageReadUrls,
 } from "@/features/image-generation/storage-url";
@@ -58,6 +59,10 @@ async function extractAgentDraftGenerations(
             storageKey,
             g.storageBucket
           );
+          const thumbnailUrl = await buildStoredImageProxyUrl(
+            storageKey,
+            g.storageBucket
+          );
           const fallbackImageUrl =
             typeof output.imageUrl === "string" ? output.imageUrl : null;
           if (!storedImageUrl && !fallbackImageUrl) return [];
@@ -82,6 +87,7 @@ async function extractAgentDraftGenerations(
               storageKey,
               storageBucket: g.storageBucket,
               imageUrl: storedImageUrl || fallbackImageUrl,
+              thumbnailUrl,
               createdAt: g.createdAt.toISOString(),
               outputRole: "agent_draft" as GalleryOutputRole,
               referenceImages,
@@ -115,23 +121,29 @@ async function extractUploadedImageGenerations(
       const referenceImages = await resolveStoredImageReadUrls(
         extractGenerationReferenceImages(g.metadata)
       );
-      return referenceImages.map((image, index) => ({
-        id: `${g.id}-upload-${image.id || index + 1}`,
-        parentId: g.id,
-        prompt: g.prompt,
-        revisedPrompt: g.revisedPrompt,
-        promptRepairNotice: extractPromptRepairNotice(g.metadata),
-        model: image.type || copy("User upload", "用户上传"),
-        size: formatUploadedImageSize(image, copy),
-        status: "completed" as const,
-        creditsConsumed: 0,
-        storageKey: image.storageKey,
-        storageBucket: image.storageBucket,
-        imageUrl: image.imageUrl,
-        createdAt: g.createdAt.toISOString(),
-        outputRole: "upload" as GalleryOutputRole,
-        referenceImages,
-      }));
+      return Promise.all(
+        referenceImages.map(async (image, index) => ({
+          id: `${g.id}-upload-${image.id || index + 1}`,
+          parentId: g.id,
+          prompt: g.prompt,
+          revisedPrompt: g.revisedPrompt,
+          promptRepairNotice: extractPromptRepairNotice(g.metadata),
+          model: image.type || copy("User upload", "用户上传"),
+          size: formatUploadedImageSize(image, copy),
+          status: "completed" as const,
+          creditsConsumed: 0,
+          storageKey: image.storageKey,
+          storageBucket: image.storageBucket,
+          imageUrl: image.imageUrl,
+          thumbnailUrl: await buildStoredImageProxyUrl(
+            image.storageKey,
+            image.storageBucket
+          ),
+          createdAt: g.createdAt.toISOString(),
+          outputRole: "upload" as GalleryOutputRole,
+          referenceImages,
+        }))
+      );
     })
   );
   return rowItems.flat();
@@ -257,6 +269,10 @@ export default async function GalleryPage({ searchParams }: GalleryPageProps) {
               storageKey: g.storageKey,
               storageBucket: g.storageBucket,
               imageUrl: await buildStoredImageReadUrl(
+                g.storageKey,
+                g.storageBucket
+              ),
+              thumbnailUrl: await buildStoredImageProxyUrl(
                 g.storageKey,
                 g.storageBucket
               ),

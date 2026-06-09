@@ -3,6 +3,14 @@ import { getStorageProvider } from "@repo/shared/storage/providers";
 import { buildSignedStorageImageUrl } from "@repo/shared/storage/signed-url";
 import { getRuntimeSettingString } from "@repo/shared/system-settings";
 
+async function resolveStoredImageBucket(storageBucket?: string | null) {
+  return (
+    storageBucket?.trim() ||
+    (await getRuntimeSettingString("NEXT_PUBLIC_GENERATIONS_BUCKET_NAME")) ||
+    "generations"
+  );
+}
+
 /**
  * Build a readable image URL for a stored object, preferring provider-level
  * signed URLs so S3/RustFS images can be fetched directly.
@@ -14,10 +22,7 @@ export async function buildStoredImageReadUrl(
 ) {
   const key = storageKey?.trim();
   if (!key) return null;
-  const bucket =
-    storageBucket?.trim() ||
-    (await getRuntimeSettingString("NEXT_PUBLIC_GENERATIONS_BUCKET_NAME")) ||
-    "generations";
+  const bucket = await resolveStoredImageBucket(storageBucket);
 
   try {
     const storage = await getStorageProvider();
@@ -30,6 +35,21 @@ export async function buildStoredImageReadUrl(
     });
     return buildSignedStorageImageUrl(key, bucket, expiresInSeconds);
   }
+}
+
+/**
+ * Build a first-party storage URL for a stored object so list views can request
+ * in-app resized thumbnails even when the full image uses RustFS/S3 direct URLs.
+ */
+export async function buildStoredImageProxyUrl(
+  storageKey: string | null | undefined,
+  storageBucket?: string | null,
+  expiresInSeconds = 3600
+) {
+  const key = storageKey?.trim();
+  if (!key) return null;
+  const bucket = await resolveStoredImageBucket(storageBucket);
+  return buildSignedStorageImageUrl(key, bucket, expiresInSeconds);
 }
 
 /**

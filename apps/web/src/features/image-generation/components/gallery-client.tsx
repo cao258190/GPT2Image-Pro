@@ -37,6 +37,7 @@ export interface GenerationWithUrl {
   storageKey: string | null;
   storageBucket: string | null;
   imageUrl: string | null;
+  thumbnailUrl?: string | null;
   outputRole?: "final" | "agent_draft" | "upload";
   referenceImages?: LightboxReferenceImage[];
   isLayered?: boolean;
@@ -177,6 +178,7 @@ export function GalleryClient({
               id={item.id}
               prompt={item.prompt}
               imageUrl={item.imageUrl}
+              thumbnailUrl={item.thumbnailUrl}
               model={item.model}
               size={item.size}
               creditsConsumed={item.creditsConsumed}
